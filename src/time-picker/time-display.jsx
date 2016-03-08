@@ -1,39 +1,24 @@
 import React from 'react';
-import StylePropable from '../mixins/style-propable';
-import DefaultRawTheme from '../styles/raw-themes/light-raw-theme';
-import ThemeManager from '../styles/theme-manager';
+import getMuiTheme from '../styles/getMuiTheme';
 
 const TimeDisplay = React.createClass({
-
-  mixins: [StylePropable],
-
-  contextTypes: {
-    muiTheme: React.PropTypes.object,
-  },
 
   propTypes: {
     affix: React.PropTypes.oneOf(['', 'pm', 'am']),
     format: React.PropTypes.oneOf(['ampm', '24hr']),
     mode: React.PropTypes.oneOf(['hour', 'minute']),
+    onSelectAffix: React.PropTypes.func,
+    onSelectHour: React.PropTypes.func,
+    onSelectMin: React.PropTypes.func,
     selectedTime: React.PropTypes.object.isRequired,
   },
 
-  //for passing default theme context to children
-  childContextTypes: {
+  contextTypes: {
     muiTheme: React.PropTypes.object,
   },
 
-  getChildContext() {
-    return {
-      muiTheme: this.state.muiTheme,
-    };
-  },
-
-  getInitialState() {
-    return {
-      transitionDirection: 'up',
-      muiTheme: this.context.muiTheme ? this.context.muiTheme : ThemeManager.getMuiTheme(DefaultRawTheme),
-    };
+  childContextTypes: {
+    muiTheme: React.PropTypes.object,
   },
 
   getDefaultProps() {
@@ -43,13 +28,26 @@ const TimeDisplay = React.createClass({
     };
   },
 
+  getInitialState() {
+    return {
+      transitionDirection: 'up',
+      muiTheme: this.context.muiTheme || getMuiTheme(),
+    };
+  },
+
+  getChildContext() {
+    return {
+      muiTheme: this.state.muiTheme,
+    };
+  },
+
   componentWillReceiveProps(nextProps, nextContext) {
-    let direction;
-    let newMuiTheme = nextContext.muiTheme ? nextContext.muiTheme : this.state.muiTheme;
-    this.setState({muiTheme: newMuiTheme});
+    this.setState({
+      muiTheme: nextContext.muiTheme || this.state.muiTheme,
+    });
 
     if (nextProps.selectedTime !== this.props.selectedTime) {
-      direction = nextProps.selectedTime > this.props.selectedTime ? 'up' : 'down';
+      const direction = nextProps.selectedTime > this.props.selectedTime ? 'up' : 'down';
 
       this.setState({
         transitionDirection: direction,
@@ -67,8 +65,8 @@ const TimeDisplay = React.createClass({
     }
 
     hour = hour.toString();
-    if (hour.length < 2 ) hour = '0' + hour;
-    if (min.length < 2 ) min = '0' + min;
+    if (hour.length < 2 ) hour = `0${hour}`;
+    if (min.length < 2 ) min = `0${min}`;
 
     return [hour, min];
   },
@@ -78,52 +76,110 @@ const TimeDisplay = React.createClass({
   },
 
   render() {
-    let {
+    const {
       selectedTime,
       mode,
+      affix,
       ...other,
     } = this.props;
 
-    let styles = {
+    const {
+      prepareStyles,
+      timePicker,
+    } = this.state.muiTheme;
+
+    const styles = {
       root: {
-        textAlign: 'center',
-        position: 'relative',
-        width: 280,
-        height: '100%',
+        padding: '14px 0',
+        borderTopLeftRadius: 2,
+        borderTopRightRadius: 2,
+        backgroundColor: timePicker.headerColor,
+        color: 'white',
       },
 
-      time: {
+      text: {
         margin: '6px 0',
         lineHeight: '58px',
         height: 58,
-        fontSize: '58px',
+        fontSize: 58,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'baseline',
       },
 
-      box: {
-        padding: '16px 0',
-        backgroundColor: this.getTheme().color,
-        color: this.getTheme().textColor,
+      time: {
+        margin: '0 10px',
       },
 
-      hour: {},
+      affix: {
+        flex: 1,
+        position: 'relative',
+        lineHeight: '17px',
+        height: 17,
+        fontSize: 17,
+      },
 
-      minute: {},
+      affixTop: {
+        position: 'absolute',
+        top: -20,
+        left: 0,
+      },
+
+      clickable: {
+        cursor: 'pointer',
+      },
+
+      inactive: {
+        opacity: 0.7,
+      },
     };
 
-    let [hour, min] = this.sanitizeTime();
+    const [hour, min] = this.sanitizeTime();
 
-    styles[mode].color = this.getTheme().accentColor;
+    let buttons = [];
+    if (this.props.format === 'ampm') {
+      buttons = [
+        <div
+          key="pm"
+          style={prepareStyles(Object.assign({}, styles.clickable, affix === 'pm' ? {} : styles.inactive))}
+          onTouchTap={() => this.props.onSelectAffix('pm')}
+        >
+          {"PM"}
+        </div>,
+        <div
+          key="am"
+          style={prepareStyles(Object.assign({},
+            styles.affixTop, styles.clickable, affix === 'am' ? {} : styles.inactive))}
+          onTouchTap={() => this.props.onSelectAffix('am')}
+        >
+          {"AM"}
+        </div>,
+      ];
+    }
 
     return (
-      <div {...other} style={this.prepareStyles(styles.root)}>
-        <div style={this.prepareStyles(styles.box)}>
-          <div style={this.prepareStyles(styles.time)}>
-            <span style={this.prepareStyles(styles.hour)} onTouchTap={this.props.onSelectHour}>{hour}</span>
+      <div {...other} style={prepareStyles(styles.root)}>
+        <div style={prepareStyles(styles.text)}>
+          <div style={prepareStyles(Object.assign({}, styles.affix))} />
+          <div style={prepareStyles(styles.time)}>
+            <span
+              style={prepareStyles(Object.assign({}, styles.clickable, mode === 'hour' ? {} : styles.inactive))}
+              onTouchTap={this.props.onSelectHour}
+            >
+              {hour}
+            </span>
             <span>:</span>
-            <span style={this.prepareStyles(styles.minute)} onTouchTap={this.props.onSelectMin}>{min}</span>
+            <span
+              style={prepareStyles(Object.assign({},
+                styles.clickable, mode === 'minute' ? {} : styles.inactive))}
+              onTouchTap={this.props.onSelectMin}
+            >
+              {min}
+            </span>
           </div>
-
-         <span key={"affix"}>{this.props.affix.toUpperCase()}</span>
+          <div style={prepareStyles(Object.assign({}, styles.affix))}>
+            {buttons}
+          </div>
         </div>
       </div>
     );

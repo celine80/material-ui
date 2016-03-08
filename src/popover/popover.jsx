@@ -1,33 +1,110 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import WindowListenable from '../mixins/window-listenable';
+import EventListener from 'react-event-listener';
 import RenderToLayer from '../render-to-layer';
-import StylePropable from '../mixins/style-propable';
 import PropTypes from '../utils/prop-types';
-import Transitions from '../styles/transitions';
 import Paper from '../paper';
 import throttle from 'lodash.throttle';
-import AutoPrefix from '../styles/auto-prefix';
+import getMuiTheme from '../styles/getMuiTheme';
+import PopoverDefaultAnimation from './popover-default-animation';
 
 const Popover = React.createClass({
-  mixins: [
-    StylePropable,
-    WindowListenable,
-  ],
 
   propTypes: {
+    /**
+     * This is the DOM element that will be used to set the position of the
+     * component.
+     */
     anchorEl: React.PropTypes.object,
+
+    /**
+     * This is the point on the anchor where the popover
+     * targetOrigin will stick to.
+     * Options:
+     * vertical: [top, middle, bottom]
+     * horizontal: [left, center, right]
+     */
     anchorOrigin: PropTypes.origin,
+
+    /**
+     * If true, the popover will apply transitions when
+     * added it gets added to the DOM.
+     */
     animated: React.PropTypes.bool,
+
+    /**
+     * Override the default animation component used.
+     */
+    animation: React.PropTypes.func,
+
+    /**
+     * If true, the popover will hide when the anchor scrolls off the screen
+     */
     autoCloseWhenOffScreen: React.PropTypes.bool,
+
+    /**
+     * If true, the popover (potentially) ignores targetOrigin
+     * and anchorOrigin to make itself fit on screen,
+     * which is useful for mobile devices.
+     */
     canAutoPosition: React.PropTypes.bool,
-    children: React.PropTypes.object,
+
+    /**
+     * Use this property to render your component inside the `Popover`.
+     */
+    children: React.PropTypes.node,
+
+    /**
+     * The css class name of the root element.
+     */
     className: React.PropTypes.string,
+
+    /**
+     * This is a callback that fires when the popover
+     * thinks it should close. (e.g. clickAway or offScreen)
+     *
+     * @param {string} reason Determines what triggered this request.
+     */
     onRequestClose: React.PropTypes.func,
+
+    /**
+     * Controls the visibility of the popover.
+     */
     open: React.PropTypes.bool,
+
+    /**
+     * Override the inline-styles of the root element.
+     */
     style: React.PropTypes.object,
+
+    /**
+     * This is the point on the popover which will stick to
+     * the anchors origin.
+     * Options:
+     * vertical: [top, middle, bottom]
+     * horizontal: [left, center, right]
+     */
     targetOrigin: PropTypes.origin,
+
+    /**
+     * If true, the popover will render on top of an invisible
+     * layer, which will prevent clicks to the underlying
+     * elements, and trigger an onRequestClose(clickAway) event.
+     */
+    useLayerForClickAway: React.PropTypes.bool,
+
+    /**
+     * This number represents the zDepth of the paper shadow.
+     */
     zDepth: PropTypes.zDepth,
+  },
+
+  contextTypes: {
+    muiTheme: React.PropTypes.object,
+  },
+
+  childContextTypes: {
+    muiTheme: React.PropTypes.object,
   },
 
   getDefaultProps() {
@@ -41,45 +118,61 @@ const Popover = React.createClass({
       canAutoPosition: true,
       onRequestClose: () => {},
       open: false,
-      style: {},
+      style: {
+        overflowY: 'auto',
+      },
       targetOrigin: {
         vertical: 'top',
         horizontal: 'left',
       },
+      useLayerForClickAway: true,
       zDepth: 1,
     };
   },
 
   getInitialState() {
-    this.setPlacementThrottled = throttle(this.setPlacement, 100);
+    this.handleResize = throttle(this.setPlacement, 100);
+    this.handleScroll = throttle(this.setPlacement.bind(this, true), 100);
 
     return {
       open: this.props.open,
+      closing: false,
+      muiTheme: this.context.muiTheme || getMuiTheme(),
     };
   },
 
-  contextTypes: {
-    muiTheme: React.PropTypes.object,
+  getChildContext() {
+    return {
+      muiTheme: this.state.muiTheme,
+    };
   },
 
-  windowListeners: {
-    resize: 'setPlacementThrottled',
-    scroll: 'setPlacementThrottled',
-  },
+  componentWillReceiveProps(nextProps, nextContext) {
+    const newMuiTheme = nextContext.muiTheme ? nextContext.muiTheme : this.state.muiTheme;
 
-  componentWillReceiveProps(nextProps) {
     if (nextProps.open !== this.state.open) {
       if (nextProps.open) {
         this.anchorEl = nextProps.anchorEl || this.props.anchorEl;
         this.setState({
           open: true,
+          closing: false,
+          muiTheme: newMuiTheme,
         });
       } else {
-        this.setState({
-          open: false,
-        }, () => {
-          this._animateClose();
-        });
+        if (nextProps.animated) {
+          this.setState({closing: true});
+          this.timeout = setTimeout(() => {
+            this.setState({
+              open: false,
+              muiTheme: newMuiTheme,
+            });
+          }, 500);
+        } else {
+          this.setState({
+            open: false,
+            muiTheme: newMuiTheme,
+          });
+        }
       }
     }
   },
@@ -89,71 +182,35 @@ const Popover = React.createClass({
   },
 
   componentWillUnmount() {
-    if (this.state.open) {
-      this._animateClose();
-    }
-  },
-
-  render() {
-    return <RenderToLayer
-      ref="layer"
-      {...this.props}
-      componentClickAway={this.componentClickAway}
-      render={this.renderLayer} />;
+    clearTimeout(this.timeout);
   },
 
   renderLayer() {
-    let {
+    const {
       animated,
-      targetOrigin,
-      className,
-      zDepth,
+      animation,
+      children,
+      style,
+      ...other,
     } = this.props;
 
-    const anchorEl = this.props.anchorEl || this.anchorEl;
-    let anchor = this.getAnchorPosition(anchorEl);
-    let horizontal = targetOrigin.horizontal.replace('middle', 'vertical');
+    let Animation = animation || PopoverDefaultAnimation;
+    let styleRoot = style;
 
-    let wrapperStyle = {
-      position: 'fixed',
-      top: anchor.top,
-      left: anchor.left,
-      zIndex: 20,
-      opacity:1,
-      overflow:'auto',
-      maxHeight:'100%',
-      transform:'scale(0,0)',
-      transformOrigin: `${horizontal} ${targetOrigin.vertical}`,
-      transition: animated ? Transitions.easeOut('500ms', ['transform', 'opacity']) : null,
-    };
-    wrapperStyle = this.mergeAndPrefix(wrapperStyle, this.props.style);
-
-    let horizontalAnimation = {
-      maxHeight:'100%',
-      overflowY:'auto',
-      transform:'scaleX(0)',
-      opacity:1,
-      transition: animated ? Transitions.easeOut('250ms', ['transform', 'opacity']) : null,
-      transformOrigin: `${horizontal} ${targetOrigin.vertical}`,
-    };
-
-    let verticalAnimation = {
-      opacity:1,
-      transform:'scaleY(0)',
-      transformOrigin: `${horizontal} ${targetOrigin.vertical}`,
-      transition: animated ? Transitions.easeOut('500ms', ['transform', 'opacity']) : null,
-    };
+    if (!Animation) {
+      Animation = Paper;
+      styleRoot = {
+        position: 'fixed',
+      };
+      if (!this.state.open) {
+        return null;
+      }
+    }
 
     return (
-      <Paper style={wrapperStyle} zDepth={zDepth} className={className} >
-        <div>
-          <div style={horizontalAnimation}>
-            <div style={verticalAnimation}>
-              {this.props.children}
-           </div>
-          </div>
-        </div>
-      </Paper>
+      <Animation {...other} style={styleRoot} open={this.state.open && !this.state.closing}>
+        {children}
+      </Animation>
     );
   },
 
@@ -163,46 +220,12 @@ const Popover = React.createClass({
     }
   },
 
-  componentClickAway(event) {
-    if (event.defaultPrevented) {
-      return;
-    }
-
+  componentClickAway() {
     this.requestClose('clickAway');
   },
 
   _resizeAutoPosition() {
     this.setPlacement();
-  },
-
-  _animateClose() {
-    if (!this.refs.layer || !this.refs.layer.getLayer()) {
-      return;
-    }
-
-    const el = this.refs.layer.getLayer().children[0];
-    this._animate(el, false);
-  },
-
-  _animate(el) {
-    let value = '0';
-    const inner = el.children[0];
-    const innerInner = inner.children[0];
-    const innerInnerInner = innerInner.children[0];
-    const rootStyle = inner.style;
-    const innerStyle = innerInner.style;
-
-    if (this.state.open) {
-      value = '1';
-    }
-
-    AutoPrefix.set(el.style, 'transform', `scale(${value},${value})`);
-    AutoPrefix.set(innerInner.style, 'transform', `scaleX(${value})`);
-    AutoPrefix.set(innerInnerInner.style, 'transform', `scaleY(${value})`);
-    AutoPrefix.set(rootStyle, 'opacity', value);
-    AutoPrefix.set(innerStyle, 'opacity', value);
-    AutoPrefix.set(innerInnerInner, 'opacity', value);
-    AutoPrefix.set(el.style, 'opacity', value);
   },
 
   getAnchorPosition(el) {
@@ -218,10 +241,10 @@ const Popover = React.createClass({
       height: el.offsetHeight,
     };
 
-    a.right = a.left + a.width;
-    a.bottom = a.top + a.height;
-    a.middle = a.left + a.width / 2;
-    a.center = a.top + a.height / 2;
+    a.right = rect.right || a.left + a.width;
+    a.bottom = rect.bottom || a.top + a.height;
+    a.middle = a.left + ((a.right - a.left) / 2);
+    a.center = a.top + ((a.bottom - a.top) / 2);
 
     return a;
   },
@@ -237,7 +260,7 @@ const Popover = React.createClass({
     };
   },
 
-  setPlacement() {
+  setPlacement(scrolling) {
     if (!this.state.open) {
       return;
     }
@@ -250,12 +273,12 @@ const Popover = React.createClass({
 
     const targetEl = this.refs.layer.getLayer().children[0];
     if (!targetEl) {
-      return {};
+      return;
     }
 
-    let {targetOrigin, anchorOrigin} = this.props;
+    const {targetOrigin, anchorOrigin} = this.props;
 
-    let anchor = this.getAnchorPosition(anchorEl);
+    const anchor = this.getAnchorPosition(anchorEl);
     let target = this.getTargetPosition(targetEl);
 
     let targetPosition = {
@@ -263,7 +286,7 @@ const Popover = React.createClass({
       left: anchor[anchorOrigin.horizontal] - target[targetOrigin.horizontal],
     };
 
-    if (this.props.autoCloseWhenOffScreen) {
+    if (scrolling && this.props.autoCloseWhenOffScreen) {
       this.autoCloseWhenOffScreen(anchor);
     }
 
@@ -272,51 +295,106 @@ const Popover = React.createClass({
       targetPosition = this.applyAutoPositionIfNeeded(anchor, target, targetOrigin, anchorOrigin, targetPosition);
     }
 
-
-    targetEl.style.top = targetPosition.top + 'px';
-    targetEl.style.left = targetPosition.left + 'px';
-
-    this._animate(targetEl, true);
+    targetEl.style.top = `${Math.max(0, targetPosition.top)}px`;
+    targetEl.style.left = `${Math.max(0, targetPosition.left)}px`;
+    targetEl.style.maxHeight = `${window.innerHeight}px`;
   },
 
   autoCloseWhenOffScreen(anchorPosition) {
-    if (anchorPosition.top < 0
-        || anchorPosition.top > window.innerHeight
-        || anchorPosition.left < 0
-        || anchorPosition.left > window.innerWith
-        ) {
+    if (anchorPosition.top < 0 ||
+      anchorPosition.top > window.innerHeight ||
+      anchorPosition.left < 0 ||
+      anchorPosition.left > window.innerWith) {
       this.requestClose('offScreen');
     }
   },
 
-  applyAutoPositionIfNeeded(anchor, target, targetOrigin, anchorOrigin, targetPosition) {
-    if (targetPosition.top + target.bottom > window.innerHeight) {
-      let positions = ['top', 'center', 'bottom']
-        .filter((position) => position !== targetOrigin.vertical);
+  getOverlapMode(anchor, target, median) {
+    if ([anchor, target].indexOf(median) >= 0) return 'auto';
+    if (anchor === target) return 'inclusive';
+    return 'exclusive';
+  },
 
-      let newTop = anchor[anchorOrigin.vertical] - target[positions[0]];
+  getPositions(anchor, target) {
+    const a = {...anchor};
+    const t = {...target};
+
+    const positions = {
+      x: ['left', 'right'].filter((p) => p !== t.horizontal),
+      y: ['top', 'bottom'].filter((p) => p !== t.vertical),
+    };
+
+    const overlap = {
+      x: this.getOverlapMode(a.horizontal, t.horizontal, 'middle'),
+      y: this.getOverlapMode(a.vertical, t.vertical, 'center'),
+    };
+
+    positions.x.splice(overlap.x === 'auto' ? 0 : 1, 0, 'middle');
+    positions.y.splice(overlap.y === 'auto' ? 0 : 1, 0, 'center');
+
+    if (overlap.y !== 'auto') {
+      a.vertical = a.vertical === 'top' ? 'bottom' : 'top';
+      if (overlap.y === 'inclusive') {
+        t.vertical = t.vertical;
+      }
+    }
+
+    if (overlap.x !== 'auto') {
+      a.horizontal = a.horizontal === 'left' ? 'right' : 'left';
+      if (overlap.y === 'inclusive') {
+        t.horizontal = t.horizontal;
+      }
+    }
+
+    return {
+      positions: positions,
+      anchorPos: a,
+    };
+  },
+
+  applyAutoPositionIfNeeded(anchor, target, targetOrigin, anchorOrigin, targetPosition) {
+    const {positions, anchorPos} = this.getPositions(anchorOrigin, targetOrigin);
+
+    if (targetPosition.top < 0 || targetPosition.top + target.bottom > window.innerHeight) {
+      let newTop = anchor[anchorPos.vertical] - target[positions.y[0]];
       if (newTop + target.bottom <= window.innerHeight)
         targetPosition.top = Math.max(0, newTop);
       else {
-        newTop = anchor[anchorOrigin.vertical] - target[positions[1]];
+        newTop = anchor[anchorPos.vertical] - target[positions.y[1]];
         if (newTop + target.bottom <= window.innerHeight)
           targetPosition.top = Math.max(0, newTop);
       }
     }
-    if (targetPosition.left + target.right > window.innerWidth) {
-      let positions = ['left', 'middle', 'right']
-        .filter((position) => position !== targetOrigin.horizontal);
-
-      let newLeft = anchor[anchorOrigin.horizontal] - target[positions[0]];
+    if (targetPosition.left < 0 || targetPosition.left + target.right > window.innerWidth) {
+      let newLeft = anchor[anchorPos.horizontal] - target[positions.x[0]];
       if (newLeft + target.right <= window.innerWidth)
         targetPosition.left = Math.max(0, newLeft);
       else {
-        newLeft = anchor[anchorOrigin.horizontal] - target[positions[1]];
+        newLeft = anchor[anchorPos.horizontal] - target[positions.x[1]];
         if (newLeft + target.right <= window.innerWidth)
           targetPosition.left = Math.max(0, newLeft);
       }
     }
     return targetPosition;
+  },
+
+  render() {
+    return (
+      <noscript>
+        <EventListener
+          elementName="window"
+          onScroll={this.handleScroll}
+          onResize={this.handleResize}
+        />
+        <RenderToLayer
+          ref="layer"
+          open={this.state.open}
+          componentClickAway={this.componentClickAway}
+          useLayerForClickAway={this.props.useLayerForClickAway}
+          render={this.renderLayer}
+        />
+      </noscript>
+    );
   },
 
 });

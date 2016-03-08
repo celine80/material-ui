@@ -1,32 +1,44 @@
 import React from 'react';
-import StylePropable from '../mixins/style-propable';
-import WindowListenable from '../mixins/window-listenable';
-import KeyCode from '../utils/key-code';
+import EventListener from 'react-event-listener';
+import keycode from 'keycode';
 import Clock from './clock';
 import Dialog from '../dialog';
 import FlatButton from '../flat-button';
-import DefaultRawTheme from '../styles/raw-themes/light-raw-theme';
-import ThemeManager from '../styles/theme-manager';
+import getMuiTheme from '../styles/getMuiTheme';
 
 const TimePickerDialog = React.createClass({
 
-  mixins: [StylePropable, WindowListenable],
-
-  contextTypes: {
-    muiTheme: React.PropTypes.object,
-  },
-
   propTypes: {
     autoOk: React.PropTypes.bool,
+    cancelLabel: React.PropTypes.string,
+    format: React.PropTypes.oneOf(['ampm', '24hr']),
     initialTime: React.PropTypes.object,
+    okLabel: React.PropTypes.string,
     onAccept: React.PropTypes.func,
     onDismiss: React.PropTypes.func,
     onShow: React.PropTypes.func,
   },
 
-  //for passing default theme context to children
+  contextTypes: {
+    muiTheme: React.PropTypes.object,
+  },
+
   childContextTypes: {
     muiTheme: React.PropTypes.object,
+  },
+
+  getDefaultProps() {
+    return {
+      okLabel: 'OK',
+      cancelLabel: 'Cancel',
+    };
+  },
+
+  getInitialState() {
+    return {
+      open: false,
+      muiTheme: this.context.muiTheme || getMuiTheme(),
+    };
   },
 
   getChildContext() {
@@ -35,102 +47,25 @@ const TimePickerDialog = React.createClass({
     };
   },
 
-  getInitialState() {
-    return {
-      open: false,
-      muiTheme: this.context.muiTheme ? this.context.muiTheme : ThemeManager.getMuiTheme(DefaultRawTheme),
-    };
-  },
-
-  //to update theme inside state whenever a new theme is passed down
-  //from the parent / owner using context
   componentWillReceiveProps(nextProps, nextContext) {
-    let newMuiTheme = nextContext.muiTheme ? nextContext.muiTheme : this.state.muiTheme;
-    this.setState({muiTheme: newMuiTheme});
+    this.setState({
+      muiTheme: nextContext.muiTheme || this.state.muiTheme,
+    });
   },
-
-  windowListeners: {
-    keyup: '_handleWindowKeyUp',
-  },
-
 
   getTheme() {
     return this.state.muiTheme.timePicker;
   },
 
-  render() {
-    let {
-      initialTime,
-      onAccept,
-      format,
-      autoOk,
-      onShow,
-      onDismiss,
-      ...other,
-    } = this.props;
-
-    let styles = {
-      root: {
-        fontSize: 14,
-        color: this.getTheme().clockColor,
-      },
-      dialogContent: {
-        width: 280,
-      },
-      body: {
-        padding:0,
-      },
-    };
-
-    let actions = [
-      <FlatButton
-        key={0}
-        label="Cancel"
-        secondary={true}
-        onTouchTap={this.dismiss} />,
-      <FlatButton
-        key={1}
-        label="OK"
-        secondary={true}
-        onTouchTap={this._handleOKTouchTap} />,
-    ];
-
-    const onClockChangeMinutes = (autoOk === true ? this._handleOKTouchTap : undefined);
-
-    // Those two properties are deprecated, we will remove them at some point
-    if (typeof onDismiss === 'function') {
-      other.onDismiss = onDismiss;
-    }
-    if (typeof onShow === 'function') {
-      other.onShow = onShow;
-    }
-
-    return (
-      <Dialog {...other}
-        ref="dialogWindow"
-        style={this.mergeAndPrefix(styles.root)}
-        bodyStyle={this.mergeAndPrefix(styles.body)}
-        actions={actions}
-        contentStyle={styles.dialogContent}
-        repositionOnUpdate={false}
-        open={this.state.open}
-        onRequestClose={this.dismiss}>
-        <Clock
-          ref="clock"
-          format={format}
-          initialTime={initialTime}
-          onChangeMinutes={onClockChangeMinutes} />
-      </Dialog>
-    );
-  },
-
   show() {
+    if (this.props.onShow && !this.state.open) this.props.onShow();
     this.setState({
       open: true,
     });
   },
 
   dismiss() {
+    if (this.props.onDismiss && this.state.open) this.props.onDismiss();
     this.setState({
       open: false,
     });
@@ -145,12 +80,76 @@ const TimePickerDialog = React.createClass({
 
   _handleWindowKeyUp(event) {
     if (this.state.open) {
-      switch (event.keyCode) {
-        case KeyCode.ENTER:
+      switch (keycode(event)) {
+        case 'enter':
           this._handleOKTouchTap();
           break;
       }
     }
+  },
+
+  render() {
+    const {
+      initialTime,
+      onAccept,
+      format,
+      autoOk,
+      okLabel,
+      cancelLabel,
+      ...other,
+    } = this.props;
+
+    const styles = {
+      root: {
+        fontSize: 14,
+        color: this.getTheme().clockColor,
+      },
+      dialogContent: {
+        width: 280,
+      },
+      body: {
+        padding: 0,
+      },
+    };
+
+    const actions = [
+      <FlatButton
+        key={0}
+        label={cancelLabel}
+        primary={true}
+        onTouchTap={this.dismiss}
+      />,
+      <FlatButton
+        key={1}
+        label={okLabel}
+        primary={true}
+        onTouchTap={this._handleOKTouchTap}
+      />,
+    ];
+
+    const onClockChangeMinutes = (autoOk === true ? this._handleOKTouchTap : undefined);
+
+    return (
+      <Dialog
+        {...other}
+        ref="dialogWindow"
+        style={styles.root}
+        bodyStyle={styles.body}
+        actions={actions}
+        contentStyle={styles.dialogContent}
+        repositionOnUpdate={false}
+        open={this.state.open}
+        onRequestClose={this.dismiss}
+      >
+        <EventListener elementName="window" onKeyUp={this._handleWindowKeyUp} />
+        <Clock
+          ref="clock"
+          format={format}
+          initialTime={initialTime}
+          onChangeMinutes={onClockChangeMinutes}
+        />
+      </Dialog>
+    );
   },
 
 });

@@ -1,19 +1,24 @@
 import React from 'react';
-import StylePropable from './mixins/style-propable';
-import DefaultRawTheme from './styles/raw-themes/light-raw-theme';
-import ThemeManager from './styles/theme-manager';
+import getMuiTheme from './styles/getMuiTheme';
 
 const AppCanvas = React.createClass({
 
-  mixins: [StylePropable],
+  propTypes: {
+    children: React.PropTypes.node,
+  },
 
   contextTypes: {
     muiTheme: React.PropTypes.object,
   },
 
-  //for passing default theme context to children
   childContextTypes: {
     muiTheme: React.PropTypes.object,
+  },
+
+  getInitialState() {
+    return {
+      muiTheme: this.context.muiTheme || getMuiTheme(),
+    };
   },
 
   getChildContext() {
@@ -22,28 +27,26 @@ const AppCanvas = React.createClass({
     };
   },
 
-  getInitialState() {
-    return {
-      muiTheme: this.context.muiTheme ? this.context.muiTheme : ThemeManager.getMuiTheme(DefaultRawTheme),
-    };
-  },
-
-  //to update theme inside state whenever a new theme is passed down
-  //from the parent / owner using context
   componentWillReceiveProps(nextProps, nextContext) {
-    let newMuiTheme = nextContext.muiTheme ? nextContext.muiTheme : this.state.muiTheme;
-    this.setState({muiTheme: newMuiTheme});
+    this.setState({
+      muiTheme: nextContext.muiTheme || this.state.muiTheme,
+    });
   },
 
   render() {
-    let styles = {
+    const {
+      baseTheme,
+      prepareStyles,
+    } = this.state.muiTheme;
+
+    const styles = {
       height: '100%',
-      backgroundColor: this.state.muiTheme.rawTheme.palette.canvasColor,
-      WebkitFontSmoothing: 'antialiased',
+      color: baseTheme.palette.textColor,
+      backgroundColor: baseTheme.palette.canvasColor,
       direction: 'ltr',
     };
 
-    let newChildren = React.Children.map(this.props.children, (currentChild) => {
+    const newChildren = React.Children.map(this.props.children, (currentChild) => {
       if (!currentChild) { // If undefined, skip it
         return null;
       }
@@ -51,7 +54,7 @@ const AppCanvas = React.createClass({
       switch (currentChild.type.displayName) {
         case 'AppBar' :
           return React.cloneElement(currentChild, {
-            style: this.mergeStyles(currentChild.props.style, {
+            style: Object.assign({}, currentChild.props.style, {
               position: 'fixed',
             }),
           });
@@ -61,7 +64,7 @@ const AppCanvas = React.createClass({
     }, this);
 
     return (
-      <div style={this.prepareStyles(styles)}>
+      <div style={prepareStyles(styles)}>
         {newChildren}
       </div>
     );

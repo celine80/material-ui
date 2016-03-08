@@ -1,19 +1,13 @@
-const React = require('react');
-const PureRenderMixin = require('react-addons-pure-render-mixin');
-const SvgIcon = {{{ muiRequireStmt }}};
+import React from 'react';
+import pure from 'recompose/pure';
+import SvgIcon from '{{{ muiRequireStmt }}}';
 
-const {{className}} = React.createClass({
+let {{className}} = (props) => (
+  <SvgIcon {...props}>
+    {{{paths}}}
+  </SvgIcon>
+);
+{{className}} = pure({{className}})
+{{className}}.displayName = '{{className}}';
 
-  mixins: [PureRenderMixin],
-
-  render() {
-    return (
-      <SvgIcon {...this.props}>
-        {{{paths}}}
-      </SvgIcon>
-    );
-  }
-
-});
-
-module.exports = {{className}};
+export default {{className}};

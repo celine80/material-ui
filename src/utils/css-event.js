@@ -4,8 +4,8 @@ import Events from './events';
 export default {
 
   _testSupportedProps(props) {
-    let i,
-      el = document.createElement('div');
+    let i;
+    const el = document.createElement('div');
 
     for (i in props) {
       if (props.hasOwnProperty(i) && el.style[i] !== undefined) {
@@ -17,10 +17,10 @@ export default {
   //Returns the correct event name to use
   transitionEndEventName() {
     return this._testSupportedProps({
-      'transition':'transitionend',
-      'OTransition':'otransitionend',
-      'MozTransition':'transitionend',
-      'WebkitTransition':'webkitTransitionEnd',
+      'transition': 'transitionend',
+      'OTransition': 'otransitionend',
+      'MozTransition': 'transitionend',
+      'WebkitTransition': 'webkitTransitionEnd',
     });
   },
 
@@ -34,7 +34,7 @@ export default {
   },
 
   onTransitionEnd(el, callback) {
-    let transitionEnd = this.transitionEndEventName();
+    const transitionEnd = this.transitionEndEventName();
 
     Events.once(el, transitionEnd, () => {
       return callback();
@@ -42,7 +42,7 @@ export default {
   },
 
   onAnimationEnd(el, callback) {
-    let animationEnd = this.animationEndEventName();
+    const animationEnd = this.animationEndEventName();
 
     Events.once(el, animationEnd, () => {
       return callback();
